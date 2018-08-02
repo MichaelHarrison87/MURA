@@ -2,6 +2,7 @@ import time
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import os
 from tensorflow import keras
 from PIL import Image
 
@@ -15,19 +16,24 @@ import scipy.misc
 start_time = time.time()
 
 ### INFO FOR TENSORBOARD
-dir_tensorboard_logs = "/notebooks/meac055/MSc Dissertation/dev/MURA/02_Models/tensorboard_logs/"
-callbacks_to_use = [callbacks.TensorBoard(log_dir=dir_tensorboard_logs
-, histogram_freq=1
-)]
+# Note: put the tensorboard log into a subdirectory of the main logs folder, i.e. /logs/run_1, /logs/run_2
+# This lets tensorboard display their output as separate runs properly. For now we'll just automatically increment run number
+dir_tensorboard_logs = "./tensorboard_logs/"
+dir_tensorboard_logs = os.path.abspath(dir_tensorboard_logs)
+num_tensorboard_runs = len(os.listdir(dir_tensorboard_logs))
+dir_tensorboard_logs = dir_tensorboard_logs + "/run_" + str(num_tensorboard_runs+1)
+# Note: make the log directory later, in case the code fails before the training step and the new directory is left empty
+
+callback_tensorboard = callbacks.TensorBoard(log_dir=dir_tensorboard_logs, write_grads=True, write_images=True, histogram_freq=1)
 
 
 ### DATA PREP
 
 # Images Directory
-dir_images = "/notebooks/scratch-folder/MURA-Dataset-Processed/resized-30-23/" ## ENSURE CORRECT
+dir_images = "./data/processed/resized-30-23/" ## ENSURE CORRECT
 
 # Get images paths & split training/validation
-images_summary = pd.read_csv("/notebooks/meac055/MSc Dissertation/results/MURA/01_Prep/images_summary.csv")
+images_summary = pd.read_csv("./results/images_summary.csv")
 filenames_relative_train = images_summary[images_summary.DataRole=="train"].FileName_Relative.values
 filenames_relative_valid = images_summary[images_summary.DataRole=="valid"].FileName_Relative.values
 filenames_train = dir_images + filenames_relative_train
@@ -65,7 +71,7 @@ num_images_valid = len(filenames_valid)
 
 # TRAINING PARAMS
 batch_size = 32
-num_epochs = 10
+num_epochs = 5
 num_steps_per_epoch = int(num_images_train/batch_size)  # Number of batches that constitutes an epoch
 num_steps_per_epoch_valid = int(num_images_valid/batch_size)   # Number of batches that constitutes a validation epoch
 # num_steps_per_epoch = 50
@@ -126,7 +132,7 @@ def build_model():
 init = tf.group(tf.global_variables_initializer(),tf.local_variables_initializer())
 config = tf.ConfigProto()
 #config.gpu_options.allow_growth=True
-config.gpu_options.per_process_gpu_memory_fraction=0.50
+#config.gpu_options.per_process_gpu_memory_fraction=0.50
 #config.log_device_placement=True
 
 with tf.Session(config=config) as sess:
@@ -139,12 +145,13 @@ with tf.Session(config=config) as sess:
     model.compile(optimizer='RMSprop',loss='binary_crossentropy', metrics=['accuracy'])
 
     train_start = time.time()
+    os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
     model.fit(dataset_train
     , epochs=num_epochs
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    , callbacks = callbacks_to_use
+    , callbacks = [callback_tensorboard]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
 

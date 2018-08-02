@@ -1,4 +1,9 @@
 /data/
+/models/
+/models/*.h5
+/tensorboard_logs/
+/scratchpad/
 *.png
 *.jpg
 *.jpeg
+*.h5
