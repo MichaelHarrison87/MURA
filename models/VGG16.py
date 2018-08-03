@@ -12,7 +12,8 @@ from tensorflow.python.keras.applications import VGG16
 
 def build_vgg16_notop(image_dimensions, size_final_dense, num_classes, trainable=False):
     """
-    Creates the VGG16 model without the final "top" dense layers
+    Creates the VGG16 model without the final "top" dense layersself.
+    Removing these top layers allows the VGG16 convolutional base to be used with a different set of image classes than the original VGG16 was trained on 
     """
 
     vgg16_base = VGG16(weights='imagenet'
@@ -36,7 +37,10 @@ def sum_weights_vgg16_notop():
     Sums the weights of all layers in the vgg16_notop model.
     Used as a diagnostic to ensure these weights are not accidentally changed during training
     """
-    vgg16_h5 = h5py.File("./models/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5")
+
+    # Location below should be relative to the script that calls this function (i.e. the directory above the models subdirectory), not this VGG16 script
+    h5_file = "./models/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5"
+    vgg16_h5 = h5py.File(h5_file)
 
     keys = list(vgg16_h5.keys())
 

@@ -66,7 +66,7 @@ COLUMNS  = ["DataRole"
 , "FileName"
 , "FileName_Relative"]
 summary_table = pd.DataFrame(summary_list, columns = COLUMNS)
-outcomes = outcomes = {"negative":0, "positive":1}
+outcomes = {"negative":0, "positive":1}
 summary_table.StudyOutcome = summary_table.StudyOutcome.map(outcomes)
 
 print("Table Shape:  ", summary_table.shape)

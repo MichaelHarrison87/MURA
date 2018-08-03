@@ -37,23 +37,28 @@ dir_images = "./data/processed/resized-100-77/" ## ENSURE CORRECT
 
 # Get images paths & split training/validation
 images_summary = pd.read_csv("./results/images_summary.csv")
-filenames_relative_train = images_summary[images_summary.DataRole=="train"].FileName_Relative.values
-filenames_relative_valid = images_summary[images_summary.DataRole=="valid"].FileName_Relative.values
+images_summary_train = images_summary[images_summary.DataRole=="train"]
+images_summary_valid = images_summary[images_summary.DataRole=="valid"]
+
+filenames_relative_train = images_summary_train.FileName_Relative.values
 filenames_train = dir_images + filenames_relative_train
+
+filenames_relative_valid = images_summary_valid.FileName_Relative.values
 filenames_valid = dir_images + filenames_relative_valid
-filenames_dict = {"train": filenames_train, "valid": filenames_valid}
+
 
 # Get associated labels and convert to one-hot encoding
-labels_train_nohot = images_summary[images_summary.DataRole=="train"].StudyOutcome.values
-labels_train = to_categorical(labels_train_nohot)
-num_classes = labels_train.shape[1]
+labels_train_scalar = images_summary_train.StudyOutcome.values
+labels_train_onehot = to_categorical(labels_train_scalar)
+num_classes = labels_train_onehot.shape[1]
 
-labels_valid_nohot = images_summary[images_summary.DataRole=="valid"].StudyOutcome.values
-labels_valid = to_categorical(labels_valid_nohot)
+labels_valid_scalar = images_summary_valid.StudyOutcome.values
+labels_valid_onehot = to_categorical(labels_valid_scalar)
 
-# Package train & valid labels into a dict for easy reference/iteration
-labels_dict = {"train":labels_train, "valid":labels_valid}
-labels_dict_nohot = {"train":labels_train_nohot, "valid":labels_valid_nohot} # Original "no hot" 0/1 label encoding
+# Package train & valid items into dicts for easy reference/iteration
+filenames_dict = {"train": filenames_train, "valid": filenames_valid}
+labels_dict_scalar = {"train":labels_train_scalar, "valid":labels_valid_scalar}
+labels_dict_onehot = {"train":labels_train_onehot, "valid":labels_valid_onehot}
 
 
 # Check to_categorical working as intended (e.g. not differently for train vs valid, 0->[1,0], 1->[0,1])
@@ -65,12 +70,12 @@ for role in ['train','valid']:
 
         # Compare orig & nohot labels
         labels_orig = images_summary[images_summary.DataRole==role].StudyOutcome.values
-        labels_nohot = labels_dict_nohot[role]
-        if sum(labels_orig!=labels_nohot)!=0:
+        labels_scalar = labels_dict_scalar[role]
+        if sum(labels_orig!=labels_scalar)!=0:
             mismatch=True
 
         # Compare orig & one-hot labels
-        labels_onehot = labels_dict[role]
+        labels_onehot = labels_dict_onehot[role]
         if x==0:
             labels_onehot_values = abs(labels_onehot[:,x]-1) # 0's are flagged 1 in the first one-hot column, so swap 0 to 1 and vice versa to match orig no-hot labels
         else:
@@ -79,8 +84,8 @@ for role in ['train','valid']:
         if sum(labels_orig!=labels_onehot_values)!=0:
             mismatch=True
 
-        num_outcomes = sum(labels_dict_nohot[role]==x)
-        num_outcomes_categorical = np.sum(labels_dict[role],axis=0)[x]
+        num_outcomes = sum(labels_dict_scalar[role]==x)
+        num_outcomes_categorical = np.sum(labels_dict_onehot[role],axis=0)[x]
 
         if mismatch:
             print("WARNING: to_categorical not working as intended!")
@@ -97,19 +102,17 @@ image_depth = 3 # VGG16 requires 3-channel images
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
-batch_size = 32
+batch_size = 256
 num_epochs = 1
 num_steps_per_epoch = math.ceil(num_images_train/batch_size)  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
 num_steps_per_epoch_valid = math.ceil(num_images_valid/batch_size)   # As above
-# num_steps_per_epoch = 10
-# num_steps_per_epoch_valid = 1
 
 seed_train = 587
 seed_valid = seed_train+1
 
 # Now create the training & validation datasets
 dataset_train = utils.create_dataset(filenames = filenames_train
-, labels = labels_train
+, labels = labels_train_onehot
 , num_channels = image_depth
 , batch_size = batch_size
 , shuffle_and_repeat = True
@@ -117,7 +120,7 @@ dataset_train = utils.create_dataset(filenames = filenames_train
 , seed = seed_train)
 
 dataset_valid = utils.create_dataset(filenames = filenames_valid
-, labels = labels_valid
+, labels = labels_valid_onehot
 , num_channels = image_depth
 , batch_size = batch_size
 , shuffle_and_repeat = True
@@ -141,93 +144,109 @@ with tf.Session(config=config) as sess:
     , trainable=False)
 
     # Now train it
-    model.compile(optimizer='RMSprop',loss='binary_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='RMSprop',loss='categorical_crossentropy', metrics=['accuracy'])
 
     train_start = time.time()
-    os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
+    #os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
     model.fit(dataset_train
     , epochs=num_epochs
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    , callbacks = [callback_tensorboard]
+    #, callbacks = [callback_tensorboard]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
     print(model.summary())
 
-    # Check that VGG Weights are unchanged, warn if not:
+    # Check that VGG16 Weights are unchanged, warn if not:
     vgg16_weights_sum = VGG16.sum_weights_vgg16_notop()
     vgg16_weights_post_train = utils.sum_model_weights(model)[1]
     if ((vgg16_weights_post_train/vgg16_weights_sum-1)>1E-6):
         print("WARNING: VGG Weights Updated During Training")
 
     print("TRAINING DONE")
+
+
+    ### PREDICTIONS
+
+    # Re-create the training & validation datasets without shuffling, so can match predictions with orig labels
+    dataset_train_noshuffle = utils.create_dataset(filenames = filenames_train
+    , labels = labels_train_onehot
+    , num_channels = image_depth
+    , batch_size = batch_size
+    , shuffle_and_repeat = False)
+
+    dataset_valid_noshuffle = utils.create_dataset(filenames = filenames_valid
+    , labels = labels_valid_onehot
+    , num_channels = image_depth
+    , batch_size = batch_size
+    , shuffle_and_repeat = False)
+
+    # Get the predicted class probabilities, labels & probabilities of abnormality
+    pred_probs_train, pred_labels_train, pred_probs_abnormal_train  = utils.get_predictions(dataset_train_noshuffle, model, steps=num_steps_per_epoch)
+    pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset_valid_noshuffle, model, steps=num_steps_per_epoch_valid)
+
+
+### Tensorflow no longer required, so come out of the session
+
+# Calculate (image-wise) accuracy & cross-entropy loss
+accuracy_train = utils.calc_accuracy(labels_train_scalar, pred_labels_train)
+accuracy_valid = utils.calc_accuracy(labels_valid_scalar, pred_labels_valid)
+loss_train = utils.calc_crossentropy_loss(labels_train_onehot, pred_probs_train)
+loss_valid = utils.calc_crossentropy_loss(labels_valid_onehot, pred_probs_valid)
+print("ACCURACY TRAIN:", accuracy_train)
+print("ACCURACY VALID:", accuracy_valid)
+print("LOSS TRAIN:", loss_train)
+print("LOSS VALID:", loss_valid)
+
+
+# Now want to aggregate image-wise predictions into study-wise predictions (each study comprises a variable number of images)
+# From the original MURA paper:
+# "We compute the overall probability of abnormality for the study by taking the arithmetic mean of the abnormality probabilities output by the network for each image.
+# The model makes the binary prediction of abnormal if the probability of abnormality for the study is greater than 0.5."
+# Studies are identified in the images_summary table by the combination of Site, PatientID & StudyNumber
+# Some PatientID's appear in multiple Sites, while StudyNumber only counts studies per-patient - hence all 3 are required to uniquely identify a study
+# We'll also include DataRole in case we want to append train & validation sets back together
+
+# Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
+num_studies_published_dict = {"train":
+    {"normal": 8280
+    , "abnormal": 5177}
+, "valid":
+    {"normal": 661
+    , "abnormal": 538}
+}
+num_studies_total_published = 14656
+
+num_studies_total_published_check = (num_studies_published_dict["train"]["normal"]
++ num_studies_published_dict["train"]["abnormal"]
++ num_studies_published_dict["valid"]["normal"]
++ num_studies_published_dict["valid"]["abnormal"])
+
+# Check totals of published studies, to protect vs typos in the numbers above
+if num_studies_total_published != num_studies_total_published_check:
+    print("INPUT ERROR ON NUMBER OF STUDIES")
+    print("num_studies_total_published", num_studies_total_published)
+    print("num_studies_total_published_check", num_studies_total_published_check)
+
+studies_summary_train = utils.get_study_predictions(images_summary_train, pred_probs_abnormal_train)
+studies_summary_valid = utils.get_study_predictions(images_summary_valid, pred_probs_abnormal_valid)
+
+# Get the numbers of each study category derived from the data
+num_studies_derived_dict = {"train":
+    {"normal": np.sum(studies_summary_train.StudyOutcome==0)
+    , "abnormal": np.sum(studies_summary_train.StudyOutcome==1)}
+, "valid":
+    {"normal": np.sum(studies_summary_valid.StudyOutcome==0)
+    , "abnormal": np.sum(studies_summary_valid.StudyOutcome==1)}
+}
+
+# Now check these vs the published figures:
+if(num_studies_published_dict != num_studies_derived_dict):
+    print("NUMBER OF STUDIES MISMATCHED:")
+    print("Published:", num_studies_published_dict)
+    print("Derived:", num_studies_derived_dict)
     exit()
-
-### PREDICTIONS
-# Model will output predictions for each image; need to aggregate into predictions for each study (composed of multiple images)
-# Note the predctions are binary one-hot vectors (0->[1,0], 1->[0,1]) in line with the original labels
-# So multiplying labels & predictions will give 1 for correct prediction and 0 for incorrect
-# model.predict shuffles the predictions?
-
-    # Now re-create the training & validation datasets without shuffling, so can match predictions with orig labels
-    dataset_train_noshuffle = create_dataset(role="train", batch_size=batch_size, shuffle_and_repeat=False)
-    dataset_valid_noshuffle = create_dataset(role="valid", batch_size=batch_size, shuffle_and_repeat=False)
-
-    predictions_train  = model.predict(dataset_train_noshuffle, steps = num_steps_per_epoch)
-    predictions_valid  = model.predict(dataset_valid_noshuffle, steps = num_steps_per_epoch_valid)
-    predictions_dict = {"train": predictions_train, "valid": predictions_valid}
-
-    # Convert predictions to "no-hot" 0/1 representations
-    predictions_train_nohot = np.argmax(predictions_train, axis=1)
-    predictions_valid_nohot = np.argmax(predictions_valid, axis=1)
-
-    # Package into dict
-    predictions_dict = {"train": predictions_train, "valid": predictions_valid}
-    predictions_dict_nohot = {"train": predictions_train_nohot, "valid": predictions_valid_nohot}
-
-    accuracy_train = sum(predictions_train_nohot==labels_train_nohot)/num_images_train
-    accuracy_train_shuffle = sum(predictions_train_shuffle_nohot==labels_train_nohot)/num_images_train
-    accuracy_valid = sum(predictions_valid_nohot==labels_valid_nohot)/num_images_valid
-    accuracy_valid_shuffle = sum(predictions_valid_shuffle_nohot==labels_valid_nohot)/num_images_valid
-    accuracy_test = sum(predictions_test_full_nohot==labels_test_full_nohot)/num_images_train
-    print("ACCURACY TRAIN:", accuracy_train)
-    print("ACCURACY TRAIN SHUFFLE:", accuracy_train_shuffle)
-    print("ACCURACY VALID:", accuracy_valid)
-    print("ACCURACY VALID SHUFFLE:", accuracy_valid_shuffle)
-    print("ACCURACY TEST:",accuracy_test)
-
-
-    # predictions_valid  = model.predict(dataset_valid_noshuffle, steps = num_steps_per_epoch_valid)
-    # print("SHAPE predictions_valid:", predictions_valid.shape)
-    # predictions_dict = {"train": predictions_train, "valid": predictions_valid}
-    #
-    # # Calc accuracy
-    # for role in ["train", "valid"]:
-    #     predictions = predictions_dict[role]
-    #     labels = labels_dict[role]
-    #     accuracy_vector = predictions * labels
-    #     accuracy = np.sum(accuracy_vector)/predictions.shape[0]
-    #     print("Accuracy - "+role, accuracy)
-    #
-    # # Convert one-hot predictions to "no-hot" 0/1 encoding
-    # predictions_train = np.argmax(predictions_train, axis=1)
-    # predictions_valid = np.argmax(predictions_valid, axis=1)
-    # predictions_dict = {"train": predictions_train, "valid": predictions_valid}
-    #
-    # # Calculate confusion matrices
-    # for role in ["train", "valid"]:
-    #     labels = labels_dict_nohot[role]
-    #     predictions = predictions_dict[role]
-    #
-    #     cm = confusion_matrix(labels, predictions)
-    #     print("Confusion Matrix - " + role)
-    #     print(cm)
-    #     print("Accuracy:", (cm[0,0]+cm[1,1])/np.sum(cm))
-
-
-
-
 
 
 print("--- %s seconds ---" % (time.time() - start_time))
