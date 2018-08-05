@@ -58,7 +58,7 @@ def sum_model_weights(model):
 
     return(weights_by_layer)
 
-
+# OLD:
 def get_predictions(dataset, model, steps):
     """
     Gets the class probabilities, predicted classes & probability of abnormality calculated by a given model on a given tensorflow dataset
@@ -69,6 +69,14 @@ def get_predictions(dataset, model, steps):
     predicted_labels = np.argmax(predicted_probs, axis=1)
     predicted_probs_abnormal = predicted_probs[:,1] # probs that label=1, i.e. the x-ray is abnormal (the study was "positive")
     return predicted_probs, predicted_labels, predicted_probs_abnormal
+
+# def get_predictions(class_probs):
+#     """
+#     Gets the predicted labels & prob of abnormality from a given set of class probabilities
+#     """
+#     labels = np.argmax(class_probs, axis=1)
+#     probs_abnormal = class_probs[:,1] # probs that label=1, i.e. the x-ray is abnormal (the study was "positive")
+#     return labels, probs_abnormal
 
 
 def calc_accuracy(labels, predicted_labels):
@@ -91,7 +99,7 @@ def calc_crossentropy_loss(class_vectors, predicted_class_probs):
     predicted_class_probs = predicted_class_probs + epsilon
 
     num_obs = len(class_vectors)
-    entropy = - class_vectors * np.log(predicted_class_probs) # Note np.log is natural log
+    entropy = -1 * class_vectors * np.log(predicted_class_probs) # Note np.log is natural log
     loss = np.sum(entropy)/num_obs
     return loss
 
@@ -123,3 +131,29 @@ def get_study_predictions(images_table, images_abnormal_probs, abnormal_threshol
     studies_table["PredLabel"] = PredLabel
 
     return studies_table
+
+
+# Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
+def get_num_studies_published():
+    num_studies_published_dict = {"train":
+        {"normal": 8280
+        , "abnormal": 5177}
+    , "valid":
+        {"normal": 661
+        , "abnormal": 538}
+    }
+    num_studies_total_published = 14656
+
+    num_studies_total_published_check = (num_studies_published_dict["train"]["normal"]
+    + num_studies_published_dict["train"]["abnormal"]
+    + num_studies_published_dict["valid"]["normal"]
+    + num_studies_published_dict["valid"]["abnormal"])
+
+    # Check totals of published studies, to protect vs typos in the numbers above
+    if num_studies_total_published != num_studies_total_published_check:
+        print("INPUT ERROR ON NUMBER OF STUDIES")
+        print("num_studies_total_published", num_studies_total_published)
+        print("num_studies_total_published_check", num_studies_total_published_check)
+        exit()
+
+    return num_studies_published_dict

@@ -6,7 +6,7 @@ import tensorflow as tf
 import os
 from PIL import Image
 
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
 from tensorflow.python.keras.utils import to_categorical
 from tensorflow.python.keras import callbacks
@@ -183,11 +183,16 @@ with tf.Session(config=config) as sess:
     , shuffle_and_repeat = False)
 
     # Get the predicted class probabilities, labels & probabilities of abnormality
-    pred_probs_train, pred_labels_train, pred_probs_abnormal_train  = utils.get_predictions(dataset_train_noshuffle, model, steps=num_steps_per_epoch)
-    pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset_valid_noshuffle, model, steps=num_steps_per_epoch_valid)
+    pred_probs_train, pred_labels_train, pred_probs_abnormal_train = utils.get_predictions(dataset=dataset_train_noshuffle
+    , model=model
+    , steps=num_steps_per_epoch)
 
+    pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset=dataset_valid_noshuffle
+    , model=model
+    , steps=num_steps_per_epoch_valid)
 
 ### Tensorflow no longer required, so come out of the session
+
 
 # Calculate (image-wise) accuracy & cross-entropy loss
 accuracy_train = utils.calc_accuracy(labels_train_scalar, pred_labels_train)
@@ -200,34 +205,8 @@ print("LOSS TRAIN:", loss_train)
 print("LOSS VALID:", loss_valid)
 
 
-# Now want to aggregate image-wise predictions into study-wise predictions (each study comprises a variable number of images)
-# From the original MURA paper:
-# "We compute the overall probability of abnormality for the study by taking the arithmetic mean of the abnormality probabilities output by the network for each image.
-# The model makes the binary prediction of abnormal if the probability of abnormality for the study is greater than 0.5."
-# Studies are identified in the images_summary table by the combination of Site, PatientID & StudyNumber
-# Some PatientID's appear in multiple Sites, while StudyNumber only counts studies per-patient - hence all 3 are required to uniquely identify a study
-# We'll also include DataRole in case we want to append train & validation sets back together
-
 # Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
-num_studies_published_dict = {"train":
-    {"normal": 8280
-    , "abnormal": 5177}
-, "valid":
-    {"normal": 661
-    , "abnormal": 538}
-}
-num_studies_total_published = 14656
-
-num_studies_total_published_check = (num_studies_published_dict["train"]["normal"]
-+ num_studies_published_dict["train"]["abnormal"]
-+ num_studies_published_dict["valid"]["normal"]
-+ num_studies_published_dict["valid"]["abnormal"])
-
-# Check totals of published studies, to protect vs typos in the numbers above
-if num_studies_total_published != num_studies_total_published_check:
-    print("INPUT ERROR ON NUMBER OF STUDIES")
-    print("num_studies_total_published", num_studies_total_published)
-    print("num_studies_total_published_check", num_studies_total_published_check)
+num_studies_published_dict = utils.get_num_studies_published()
 
 studies_summary_train = utils.get_study_predictions(images_summary_train, pred_probs_abnormal_train)
 studies_summary_valid = utils.get_study_predictions(images_summary_valid, pred_probs_abnormal_valid)
@@ -248,5 +227,36 @@ if(num_studies_published_dict != num_studies_derived_dict):
     print("Derived:", num_studies_derived_dict)
     exit()
 
+# Calc study-wise accuracy & other metrics
+labels_study_train = studies_summary_train.StudyOutcome.values
+pred_labels_study_train = studies_summary_train.PredLabel.values
+
+labels_study_valid = studies_summary_valid.StudyOutcome.values
+pred_labels_study_valid = studies_summary_valid.PredLabel.values
+
+accuracy_study_train = utils.calc_accuracy(labels_study_train, pred_labels_study_train)
+accuracy_study_valid = utils.calc_accuracy(labels_study_valid, pred_labels_study_valid)
+print("accuracy_study_train:",accuracy_study_train)
+print("accuracy_study_valid:",accuracy_study_valid)
+
+# Confusion Matrices
+confusion_matrix_train = confusion_matrix(labels_study_train, pred_labels_study_train)
+confusion_matrix_valid = confusion_matrix(labels_study_valid, pred_labels_study_valid)
+
+print("Confusion Matrix - Train:")
+print(confusion_matrix_train)
+
+print("Confusion Matrix - Valid:")
+print(confusion_matrix_valid)
+
+# Cohen's Kappa Score
+cohen_kappa_train = cohen_kappa_score(labels_study_train, pred_labels_study_train)
+cohen_kappa_valid = cohen_kappa_score(labels_study_valid, pred_labels_study_valid)
+
+print("Cohen's Kappa Score - Train:")
+print(cohen_kappa_train)
+
+print("Cohen's Kappa Score - Valid:")
+print(cohen_kappa_valid)
 
 print("--- %s seconds ---" % (time.time() - start_time))
