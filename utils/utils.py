@@ -5,6 +5,7 @@ Utility functions for use in other scripts
 import tensorflow as tf
 import numpy as np
 from PIL import Image
+import h5py
 
 
 def read_image(filename, label, num_channels):
@@ -70,14 +71,6 @@ def get_predictions(dataset, model, steps):
     predicted_probs_abnormal = predicted_probs[:,1] # probs that label=1, i.e. the x-ray is abnormal (the study was "positive")
     return predicted_probs, predicted_labels, predicted_probs_abnormal
 
-# def get_predictions(class_probs):
-#     """
-#     Gets the predicted labels & prob of abnormality from a given set of class probabilities
-#     """
-#     labels = np.argmax(class_probs, axis=1)
-#     probs_abnormal = class_probs[:,1] # probs that label=1, i.e. the x-ray is abnormal (the study was "positive")
-#     return labels, probs_abnormal
-
 
 def calc_accuracy(labels, predicted_labels):
     """
@@ -133,8 +126,20 @@ def get_study_predictions(images_table, images_abnormal_probs, abnormal_threshol
     return studies_table
 
 
-# Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
 def get_num_studies_published():
+    """
+    Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
+    The table is:
+    Study Train Validation Total Normal Abnormal Normal Abnormal
+    Elbow 1094 660 92 66 1912
+    Finger 1280 655 92 83 2110
+    Hand 1497 521 101 66 2185
+    Humerus 321 271 68 67 727
+    Forearm 590 287 69 64 1010
+    Shoulder 1364 1457 99 95 3015
+    Wrist 2134 1326 140 97 3697
+    Total No. of Studies 8280 5177 661 538 14656
+    """
     num_studies_published_dict = {"train":
         {"normal": 8280
         , "abnormal": 5177}
@@ -157,3 +162,22 @@ def get_num_studies_published():
         exit()
 
     return num_studies_published_dict
+
+def sum_weights_h5_file(h5_file):
+    """
+    Sums all the weights inside a given h5 file, which is the format Keras uses for pretrained sum_model_weights.
+    Used to ensure layers we want to keep fixed aren't trained accidentally.
+    h5 files are organised hierarchically in a tree-like structure, with the final arrays of weights as their leaves.
+    Don't know in advance the depth of the tree, so use the visititem() method to recursively traverse the tree
+    """
+    weights_sum = 0
+    layer_weights = []
+
+    def sum_weights(name, obj):
+        try:
+            keys = obj.keys
+        except AttributeError: # object has no keys and so throws an AttributeError
+            layer_weights.append(np.sum(obj))
+
+    h5_file.visititems(sum_weights)
+    return np.sum(layer_weights)
