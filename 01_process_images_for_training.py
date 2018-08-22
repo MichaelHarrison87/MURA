@@ -15,15 +15,16 @@ filenames_relative = images_summary.FileName_Relative
 
 # New Image Dimensions - ENSURE CORRECT
 aspect_ratio = 1 # 1.3 is the most frequent height/width aspect ratio in the entire MURA dataset (~30% of all images; 1.2 & 1.4 were also each ~10% of images)
-new_height = 150 # 139x139 is the smallest size accepted by inception_resnet_v2
+new_height = 200 # 139x139 is the smallest size accepted by inception_resnet_v2
 new_width = round(new_height/aspect_ratio) # Want new width to be an integer
 target_size = [new_height,new_width] # tf.resize_images takes size as [height,width]
-dir_out = "./data/processed/resized-"+str(new_height)+"-"+str(new_width) # ENSURE CORRECT
+dir_out = "./data/processed/resized-"+str(new_height)+"-"+str(new_width)+"-normalised-per-image" # ENSURE CORRECT
 
 # Function below is appled to all items in the dataset via dataset.map
 def process_image(filename):
   image_string = tf.read_file(filename)
   image = tf.image.decode_png(image_string)
+  image = tf.image.per_image_standardization(image)
   image = tf.image.resize_images(image, size=target_size)
   return image
 

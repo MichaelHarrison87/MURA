@@ -30,7 +30,7 @@ callback_tensorboard = callbacks.TensorBoard(log_dir=dir_tensorboard_logs, write
 ### DATA PREP
 
 # Images Directory
-dir_images = "./data/processed/resized-30-23/" ## ENSURE CORRECT
+dir_images = "./data/processed/resized-150-150/" ## ENSURE CORRECT
 
 # Get images paths & split training/validation
 images_summary = pd.read_csv("./results/images_summary.csv")
@@ -70,7 +70,7 @@ num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
 
 # TRAINING PARAMS
-batch_size = 32
+batch_size = 64
 num_epochs = 5
 num_steps_per_epoch = int(num_images_train/batch_size)  # Number of batches that constitutes an epoch
 num_steps_per_epoch_valid = int(num_images_valid/batch_size)   # Number of batches that constitutes a validation epoch
@@ -96,21 +96,33 @@ def build_model():
     image_input = Input(shape=(image_height, image_width, 1)) # Final element is number of channels, set as 1 for greyscale
 
     # Convolutional Layer 1
-    x = Conv2D( filters = 36
+    x = Conv2D( filters = 256
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(image_input)
+    x = Conv2D( filters = 256
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
     x = MaxPooling2D(pool_size = (2,2))(x)
 
     # Convolutional Layer 2
-    x = Conv2D( filters = 36
+    x = Conv2D( filters = 256
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    x = Conv2D( filters = 256
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
     x = MaxPooling2D(pool_size = (2,2))(x)
 
     # Convolutional Layer 3
-    x = Conv2D( filters = 36
+    x = Conv2D( filters = 256
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    x = Conv2D( filters = 256
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -118,7 +130,7 @@ def build_model():
 
     # Dense Layer
     x = Flatten()(x)
-    x = Dense(30,activation='relu')(x)
+    x = Dense(100,activation='relu')(x)
 
     # Output Layer
     out =  Dense(num_classes,activation='softmax')(x) # Task is binary classification
@@ -145,13 +157,13 @@ with tf.Session(config=config) as sess:
     model.compile(optimizer='RMSprop',loss='binary_crossentropy', metrics=['accuracy'])
 
     train_start = time.time()
-    os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
+    #os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
     model.fit(dataset_train
     , epochs=num_epochs
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    , callbacks = [callback_tensorboard]
+    #, callbacks = [callback_tensorboard]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
 

@@ -12,7 +12,7 @@ from tensorflow.python.keras.applications import inception_resnet_v2
 
 from utils import utils
 
-def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_classes, trainable=False):
+def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_classes, pooling, trainable=False):
     """
     Creates the VGG16 model without the final "top" dense layersself.
     Removing these top layers allows the VGG16 convolutional base to be used with a different set of image classes than the original VGG16 was trained on
@@ -20,7 +20,8 @@ def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_clas
 
     inception_resnet_v2_base = inception_resnet_v2.InceptionResNetV2(weights='imagenet'
     , include_top=False # Ignore the final dense layers, we'll train our own
-    , input_shape=image_dimensions)
+    , input_shape=image_dimensions
+    , pooling=pooling)
     inception_resnet_v2_base.trainable=trainable
 
     image_input = Input(shape=image_dimensions)

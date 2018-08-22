@@ -7,12 +7,11 @@ from PIL import Image
 
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D
+
 from tensorflow.python.keras.utils import to_categorical
 from tensorflow.python.keras import callbacks
-
-# from tensorflow.python.keras.models import Model
-# from tensorflow.python.keras.layers import Input, Dense, Flatten
-# from tensorflow.python.keras.applications import inception_resnet_v2
 
 # Scripts created by me:
 from models import inception_resnet_v2
@@ -22,10 +21,10 @@ from utils import utils
 start_time = time.time()
 
 ### Model Name
-model_name = "IRNV2_Pretrained_RMSProp_Default_e_50_is_150_150" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_e_25_is_200_200" ## ENSURE CORRECT
 
 # Images Directory
-dir_images = "./data/processed/resized-150-150/" ## ENSURE CORRECT
+dir_images = "./data/processed/resized-200-200-normalised-per-image/" ## ENSURE CORRECT
 
 
 ### INFO FOR TENSORBOARD
@@ -41,8 +40,6 @@ callback_tensorboard = callbacks.TensorBoard(log_dir=dir_tensorboard_logs, write
 
 
 ### DATA PREP
-
-
 
 # Get images paths & split training/validation
 images_summary = pd.read_csv("./results/images_summary.csv")
@@ -106,14 +103,14 @@ for role in ['train','valid']:
 # Get images dimension (all input images are same dimension, per pre-processing script)
 test_image = Image.open(filenames_train[0])
 image_width, image_height = test_image.size # PIL.Image gives size as (width, height)
-image_depth = 3 # VGG16 requires 3-channel images
+image_depth = 1 # VGG16 requires 3-channel images
 print("Image Dimensions:", image_height, image_width, image_depth)
 
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
 batch_size = 512
-num_epochs = 5
+num_epochs = 25
 num_steps_per_epoch = int(np.floor(num_images_train/batch_size))  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
 num_steps_per_epoch_valid = int(np.floor(num_images_valid/batch_size))   # As above
 
@@ -138,6 +135,75 @@ dataset_valid = utils.create_dataset(filenames = filenames_valid
 , seed = seed_valid)
 print("DATASETS CREATED")
 
+### BUILD MODEL
+# Big: initial_filters=256, size_final_dense=100
+# Small: initial_filters=32, size_final_dense=100
+def build_model(initial_filters, size_final_dense):
+
+    # Input Layer
+    image_input = Input(shape=(image_height, image_width, image_depth)) # Final element is number of channels, set as 1 for greyscale
+
+    ### Block 1
+    # Convolutional Layer 1
+    x = Conv2D( filters = initial_filters
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(image_input)
+
+    # Convolutional Layer 2
+    x = Conv2D( filters = initial_filters
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+
+    # Pooling Layer 1 - halve spatial dimension
+    x = MaxPooling2D(pool_size = (2,2))(x)
+
+
+    ### Block 2
+    # Convolutional Layer 3 - double number of filters
+    x = Conv2D( filters = initial_filters*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+
+    # Convolutional Layer 4
+    x = Conv2D( filters = initial_filters*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+
+    # Pooling Layer 2 - halve spatial dimension
+    x = MaxPooling2D(pool_size = (2,2))(x)
+
+
+    ### Block 3
+    # Convolutional Layer 5 - double number of filters
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+
+    # Convolutional Layer 6
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+
+    # Pooling Layer 3 - halve spatial dimension
+    x = MaxPooling2D(pool_size = (2,2))(x)
+
+    # Dense Layer
+    x = Flatten()(x)
+    x = Dense(size_final_dense,activation='relu')(x)
+
+    # Output Layer
+    out =  Dense(num_classes,activation='softmax')(x) # Task is binary classification
+
+    model = Model(image_input, out)
+    return(model)
+
+
 ### TRAINING
 # Open tensorflow session
 init = tf.group(tf.global_variables_initializer(),tf.local_variables_initializer())
@@ -149,26 +215,7 @@ with tf.Session(config=config) as sess:
     print("TF SESSION OPEN")
 
     # Build the model
-    model = inception_resnet_v2.build_inception_resnet_v2_notop(image_dimensions = (image_height, image_width, image_depth)
-    , size_final_dense = 256
-    , num_classes = 2
-    , pooling = 'avg'
-    , trainable=False)
-
-    # inception_resnet_v2_base = inception_resnet_v2.InceptionResNetV2(include_top=False,
-    #                       weights='imagenet',
-    #                       input_tensor=None,
-    #                       input_shape= (image_height, image_width, image_depth),
-    #                       pooling='avg')
-    #
-    # image_input = Input(shape=(image_height, image_width, image_depth))
-    # x = inception_resnet_v2_base(image_input)
-    # x = Flatten()(x)
-    # x = Dense(256,activation='relu')(x)
-    # out = Dense(2,activation='softmax')(x) # Task is classification
-    #
-    # model = Model(image_input, out)
-
+    model = build_model(initial_filters=32, size_final_dense=100)
     print("MODEL BUILT")
 
     # Now train it
@@ -182,114 +229,16 @@ with tf.Session(config=config) as sess:
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    #, callbacks = [callback_tensorboard]
+    , callbacks = [callback_tensorboard]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
     print(model.summary())
 
     # Save the model
     dir_keras_saves = './keras_saves/'
-    #model.save(dir_keras_saves + model_name + ".h5")
+    model.save(dir_keras_saves + model_name + ".h5")
 
-    # Check that inception_resnet_v2 Weights are unchanged, warn if not:
-    # inception_resnet_v2_weights_sum = inception_resnet_v2.sum_weights_inception_resnet_v2_notop()
-    # inception_resnet_v2_weights_post_train = utils.sum_model_weights(model)[1]
-    # if ((inception_resnet_v2_weights_post_train/inception_resnet_v2_weights_sum-1)>1E-6):
-    #     print("WARNING: VGG Weights Updated During Training")
 
     print("TRAINING DONE")
-
-
-    ### PREDICTIONS
-
-    # Re-create the training & validation datasets without shuffling, so can match predictions with orig labels
-#     dataset_train_noshuffle = utils.create_dataset(filenames = filenames_train
-#     , labels = labels_train_onehot
-#     , num_channels = image_depth
-#     , batch_size = batch_size
-#     , shuffle_and_repeat = False)
-#
-#     dataset_valid_noshuffle = utils.create_dataset(filenames = filenames_valid
-#     , labels = labels_valid_onehot
-#     , num_channels = image_depth
-#     , batch_size = batch_size
-#     , shuffle_and_repeat = False)
-#
-#     # Get the predicted class probabilities, labels & probabilities of abnormality
-#     pred_probs_train, pred_labels_train, pred_probs_abnormal_train = utils.get_predictions(dataset=dataset_train_noshuffle
-#     , model=model
-#     , steps=num_steps_per_epoch)
-#
-#     pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset=dataset_valid_noshuffle
-#     , model=model
-#     , steps=num_steps_per_epoch_valid)
-#
-# ### Tensorflow no longer required, so come out of the session
-#
-#
-# # Calculate (image-wise) accuracy & cross-entropy loss
-# accuracy_train = utils.calc_accuracy(labels_train_scalar, pred_labels_train)
-# accuracy_valid = utils.calc_accuracy(labels_valid_scalar, pred_labels_valid)
-# loss_train = utils.calc_crossentropy_loss(labels_train_onehot, pred_probs_train)
-# loss_valid = utils.calc_crossentropy_loss(labels_valid_onehot, pred_probs_valid)
-# print("ACCURACY TRAIN:", accuracy_train)
-# print("ACCURACY VALID:", accuracy_valid)
-# print("LOSS TRAIN:", loss_train)
-# print("LOSS VALID:", loss_valid)
-#
-#
-# # Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
-# num_studies_published_dict = utils.get_num_studies_published()
-#
-# studies_summary_train = utils.get_study_predictions(images_summary_train, pred_probs_abnormal_train)
-# studies_summary_valid = utils.get_study_predictions(images_summary_valid, pred_probs_abnormal_valid)
-#
-# # Get the numbers of each study category derived from the data
-# num_studies_derived_dict = {"train":
-#     {"normal": np.sum(studies_summary_train.StudyOutcome==0)
-#     , "abnormal": np.sum(studies_summary_train.StudyOutcome==1)}
-# , "valid":
-#     {"normal": np.sum(studies_summary_valid.StudyOutcome==0)
-#     , "abnormal": np.sum(studies_summary_valid.StudyOutcome==1)}
-# }
-#
-# # Now check these vs the published figures:
-# if(num_studies_published_dict != num_studies_derived_dict):
-#     print("NUMBER OF STUDIES MISMATCHED:")
-#     print("Published:", num_studies_published_dict)
-#     print("Derived:", num_studies_derived_dict)
-#     exit()
-#
-# # Calc study-wise accuracy & other metrics
-# labels_study_train = studies_summary_train.StudyOutcome.values
-# pred_labels_study_train = studies_summary_train.PredLabel.values
-#
-# labels_study_valid = studies_summary_valid.StudyOutcome.values
-# pred_labels_study_valid = studies_summary_valid.PredLabel.values
-#
-# accuracy_study_train = utils.calc_accuracy(labels_study_train, pred_labels_study_train)
-# accuracy_study_valid = utils.calc_accuracy(labels_study_valid, pred_labels_study_valid)
-# print("accuracy_study_train:",accuracy_study_train)
-# print("accuracy_study_valid:",accuracy_study_valid)
-#
-# # Confusion Matrices
-# confusion_matrix_train = confusion_matrix(labels_study_train, pred_labels_study_train)
-# confusion_matrix_valid = confusion_matrix(labels_study_valid, pred_labels_study_valid)
-#
-# print("Confusion Matrix - Train:")
-# print(confusion_matrix_train)
-#
-# print("Confusion Matrix - Valid:")
-# print(confusion_matrix_valid)
-#
-# # Cohen's Kappa Score
-# cohen_kappa_train = cohen_kappa_score(labels_study_train, pred_labels_study_train)
-# cohen_kappa_valid = cohen_kappa_score(labels_study_valid, pred_labels_study_valid)
-#
-# print("Cohen's Kappa Score - Train:")
-# print(cohen_kappa_train)
-#
-# print("Cohen's Kappa Score - Valid:")
-# print(cohen_kappa_valid)
 
 print("--- %s seconds ---" % (time.time() - start_time))
