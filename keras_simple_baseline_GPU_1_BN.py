@@ -8,20 +8,22 @@ from PIL import Image
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
 from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D
+from tensorflow.python.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization
 
-from tensorflow.python.keras.utils import to_categorical
+from tensorflow.python.keras.utils import to_categorical, multi_gpu_model
 from tensorflow.python.keras import callbacks
 
 # Scripts created by me:
 from models import inception_resnet_v2
 from utils import utils
 
+### GPU 1
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Big_FromScratch_RMSProp_Default_e_25_is_48_48" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Small_Dropout_FromScratch_RMSProp_Default_e_25_is_48_48" ## ENSURE CORRECT
 
 # Images Directory
 dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
@@ -142,19 +144,22 @@ def build_model(initial_filters, size_final_dense):
 
     # Input Layer
     image_input = Input(shape=(image_height, image_width, image_depth)) # Final element is number of channels, set as 1 for greyscale
+    x = BatchNormalization()(image_input)
 
     ### Block 1
     # Convolutional Layer 1
     x = Conv2D( filters = initial_filters
                , kernel_size = (3,3)
                , activation='relu'
-               , padding='same' )(image_input)
+               , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 2
     x = Conv2D( filters = initial_filters
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 1 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
@@ -166,12 +171,14 @@ def build_model(initial_filters, size_final_dense):
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 4
     x = Conv2D( filters = initial_filters*2
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 2 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
@@ -183,12 +190,14 @@ def build_model(initial_filters, size_final_dense):
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 6
     x = Conv2D( filters = initial_filters*2*2
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 3 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
@@ -215,11 +224,11 @@ with tf.Session(config=config) as sess:
     print("TF SESSION OPEN")
 
     # Build the model
-    model = build_model(initial_filters=256, size_final_dense=256)
+    model = build_model(initial_filters=32, size_final_dense=100)
     print("MODEL BUILT")
 
     # Now train it
-    model.compile(optimizer='RMSprop',loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='Adam',loss='categorical_crossentropy', metrics=['accuracy'])
     print("MODEL COMPILED")
 
     train_start = time.time()

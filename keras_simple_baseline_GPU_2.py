@@ -10,21 +10,23 @@ from sklearn.metrics import confusion_matrix, cohen_kappa_score
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D
 
-from tensorflow.python.keras.utils import to_categorical
+from tensorflow.python.keras.utils import to_categorical, multi_gpu_model
 from tensorflow.python.keras import callbacks
 
 # Scripts created by me:
 from models import inception_resnet_v2
 from utils import utils
 
+### GPU 2
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Big_FromScratch_RMSProp_Default_e_25_is_48_48" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Medium_FromScratch_RMSProp_Default_e_25_is_200_200" ## ENSURE CORRECT
 
 # Images Directory
-dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
+dir_images = "./data/processed/resized-200-200-normalised-per-image/" ## ENSURE CORRECT
 
 
 ### INFO FOR TENSORBOARD
@@ -109,7 +111,7 @@ print("Image Dimensions:", image_height, image_width, image_depth)
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
-batch_size = 512
+batch_size = 64
 num_epochs = 25
 num_steps_per_epoch = int(np.floor(num_images_train/batch_size))  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
 num_steps_per_epoch_valid = int(np.floor(num_images_valid/batch_size))   # As above
@@ -136,7 +138,8 @@ dataset_valid = utils.create_dataset(filenames = filenames_valid
 print("DATASETS CREATED")
 
 ### BUILD MODEL
-# Big: initial_filters=256, size_final_dense=100
+# Big: initial_filters=256, size_final_dense=256
+# Medium: initial_filters=128, size_final_dense=100
 # Small: initial_filters=32, size_final_dense=100
 def build_model(initial_filters, size_final_dense):
 
@@ -215,7 +218,7 @@ with tf.Session(config=config) as sess:
     print("TF SESSION OPEN")
 
     # Build the model
-    model = build_model(initial_filters=256, size_final_dense=256)
+    model = build_model(initial_filters=128, size_final_dense=100)
     print("MODEL BUILT")
 
     # Now train it

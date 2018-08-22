@@ -1,6 +1,7 @@
 from PIL import Image
 import numpy as np
 import tensorflow as tf
+from PIL import Image
 
 """
 Inspect pixel values of raw vs processed images
@@ -59,6 +60,13 @@ with tf.Session(config=config) as sess:
     image_tf_raw = sess.run(image_tf_raw)
     image_tf_processed = sess.run(image_tf_processed)
 
+    img_raw = Image.fromarray(image_tf_raw)
+    img_raw.save("image_tf_raw.png")
+
+    image_tf_processed_encode = tf.image.encode_png(image_tf_processed)
+    write = tf.write_file("image_tf_processed.png", image_tf_processed_encode)
+    sess.run(write)
+
     print("Data Raw TF:")
     print(image_tf_raw)
     print("shape:", image_tf_raw.shape)
@@ -79,8 +87,13 @@ with tf.Session(config=config) as sess:
     print()
     print()
 
-    image_string_preprocessed = tf.read_file(path_image_processed)
+    image_string_preprocessed = tf.read_file(path_image_preprocessed)
     image_tf_preprocessed = tf.image.decode_png(image_string_preprocessed)
+
+    image_tf_preprocessed = sess.run(image_tf_preprocessed)
+
+    img_tf_preprocessed = Image.fromarray(image_tf_preprocessed)
+    img_tf_preprocessed.save("image_tf_preprocessed.png")
 
     print("Data Pre-Processed TF:")
     print(image_tf_preprocessed)

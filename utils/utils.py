@@ -14,6 +14,7 @@ def read_image(filename, label, num_channels):
     """
     image_string = tf.read_file(filename)
     image = tf.image.decode_png(image_string, channels=num_channels) # Represents images (height, width, channels)
+    image = tf.image.per_image_standardization(image) # Standardise image pixel values to mean 0, stdev 1
     return image, label
 
 
