@@ -12,15 +12,16 @@ from tensorflow.python.keras.applications import VGG16
 
 from utils import utils
 
-def build_vgg16_notop(image_dimensions, size_final_dense, num_classes, trainable=False):
+def build_vgg16_notop(image_dimensions, pooling, size_final_dense, num_classes, trainable=False, weights='imagenet'):
     """
     Creates the VGG16 model without the final "top" dense layersself.
     Removing these top layers allows the VGG16 convolutional base to be used with a different set of image classes than the original VGG16 was trained on
     """
 
-    vgg16_base = VGG16(weights='imagenet'
+    vgg16_base = VGG16(weights=weights
     , include_top=False # Ignore the final dense layers, we'll train our own
-    , input_shape=image_dimensions)
+    , input_shape=image_dimensions
+    , pooling=pooling)
     vgg16_base.trainable=trainable
 
     image_input = Input(shape=image_dimensions)

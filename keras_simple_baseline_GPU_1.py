@@ -24,7 +24,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0"
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_Glorot_Normal_e_25_is_48_48" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_e_25_is_48_48_SmallerBatches" ## ENSURE CORRECT
 
 # Images Directory
 dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
@@ -60,6 +60,7 @@ filenames_valid = dir_images + filenames_relative_valid
 labels_train_scalar = images_summary_train.StudyOutcome.values
 labels_train_onehot = to_categorical(labels_train_scalar)
 num_classes = labels_train_onehot.shape[1]
+print("Num Classes:", num_classes)
 
 labels_valid_scalar = images_summary_valid.StudyOutcome.values
 labels_valid_onehot = to_categorical(labels_valid_scalar)
@@ -112,13 +113,13 @@ print("Image Dimensions:", image_height, image_width, image_depth)
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
-batch_size = 512
+batch_size = 128
 num_epochs = 25
 num_steps_per_epoch = int(np.floor(num_images_train/batch_size))  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
 num_steps_per_epoch_valid = int(np.floor(num_images_valid/batch_size))   # As above
 
-seed_train = 587
-seed_valid = seed_train+1
+seed_train = None #587
+seed_valid = None #seed_train+1
 
 # Now create the training & validation datasets
 dataset_train = utils.create_dataset(filenames = filenames_train

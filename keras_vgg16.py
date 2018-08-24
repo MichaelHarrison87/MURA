@@ -8,15 +8,26 @@ from PIL import Image
 
 from sklearn.metrics import confusion_matrix, cohen_kappa_score
 
-from tensorflow.python.keras.utils import to_categorical
+from tensorflow.python.keras.utils import to_categorical, multi_gpu_model
 from tensorflow.python.keras import callbacks
+from tensorflow.python.keras.optimizers import RMSprop, Adam
 
 # Scripts created by me:
 from models import VGG16
 from utils import utils
 
 
+### GPU 1
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 start_time = time.time()
+
+### Model Name
+model_name = "VGG16_noweights_lr_2E-4_plateau_300_300_e_50" ## ENSURE CORRECT
+
+# Images Directory
+dir_images = "./data/processed/resized-300-300/" ## ENSURE CORRECT
+
 
 ### INFO FOR TENSORBOARD
 # Note: put the tensorboard log into a subdirectory of the main logs folder, i.e. /logs/run_1, /logs/run_2
@@ -24,16 +35,13 @@ start_time = time.time()
 dir_tensorboard_logs = "./tensorboard_logs/"
 dir_tensorboard_logs = os.path.abspath(dir_tensorboard_logs)
 num_tensorboard_runs = len(os.listdir(dir_tensorboard_logs))
-dir_tensorboard_logs = dir_tensorboard_logs + "/run_" + str(num_tensorboard_runs+1)
+dir_tensorboard_logs = dir_tensorboard_logs + "/" + model_name
 # Note: make the log directory later, in case the code fails before the training step and the new directory is left empty
 
 callback_tensorboard = callbacks.TensorBoard(log_dir=dir_tensorboard_logs, write_grads=True, write_images=True, histogram_freq=1)
 
 
 ### DATA PREP
-
-# Images Directory
-dir_images = "./data/processed/resized-100-77/" ## ENSURE CORRECT
 
 # Get images paths & split training/validation
 images_summary = pd.read_csv("./results/images_summary.csv")
@@ -102,13 +110,13 @@ image_depth = 3 # VGG16 requires 3-channel images
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
-batch_size = 256
-num_epochs = 1
-num_steps_per_epoch = math.ceil(num_images_train/batch_size)  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
-num_steps_per_epoch_valid = math.ceil(num_images_valid/batch_size)   # As above
+batch_size = 64
+num_epochs = 50
+num_steps_per_epoch = int(np.floor(num_images_train/batch_size))  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
+num_steps_per_epoch_valid = int(np.floor(num_images_valid/batch_size))   # As above
 
-seed_train = 587
-seed_valid = seed_train+1
+seed_train = None #587
+seed_valid = None #seed_train+1
 
 # Now create the training & validation datasets
 dataset_train = utils.create_dataset(filenames = filenames_train
@@ -139,26 +147,37 @@ with tf.Session(config=config) as sess:
 
     # Build the model
     model = VGG16.build_vgg16_notop(image_dimensions = (image_height, image_width, image_depth)
+    , pooling = None
     , size_final_dense = 256
     , num_classes = num_classes
-    , trainable=False)
+    , trainable = True
+    , weights = None)
+    #model = multi_gpu_model(model, gpus=2)
 
     # Now train it
-    model.compile(optimizer='RMSprop',loss='categorical_crossentropy', metrics=['accuracy'])
+    opt_RMSprop = RMSprop(lr=0.0002)
+    model.compile(optimizer=opt_RMSprop,loss='categorical_crossentropy', metrics=['accuracy'])
+    callback_lr_plateau = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5)
 
     train_start = time.time()
-    #os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
+    os.makedirs(os.path.dirname(dir_tensorboard_logs), exist_ok=True) # Make tensorboard log directory
     model.fit(dataset_train
     , epochs=num_epochs
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    #, callbacks = [callback_tensorboard]
+    , callbacks = [callback_tensorboard, callback_lr_plateau]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
     print(model.summary())
 
-    # Check that VGG16 Weights are unchanged, warn if not:
+
+    # Save the model
+    dir_keras_saves = './keras_saves/'
+    model.save(dir_keras_saves + model_name + ".h5")
+
+
+    #Check that VGG16 Weights are unchanged, warn if not:
     vgg16_weights_sum = VGG16.sum_weights_vgg16_notop()
     vgg16_weights_post_train = utils.sum_model_weights(model)[1]
     if ((vgg16_weights_post_train/vgg16_weights_sum-1)>1E-6):
@@ -168,95 +187,95 @@ with tf.Session(config=config) as sess:
 
 
     ### PREDICTIONS
-
-    # Re-create the training & validation datasets without shuffling, so can match predictions with orig labels
-    dataset_train_noshuffle = utils.create_dataset(filenames = filenames_train
-    , labels = labels_train_onehot
-    , num_channels = image_depth
-    , batch_size = batch_size
-    , shuffle_and_repeat = False)
-
-    dataset_valid_noshuffle = utils.create_dataset(filenames = filenames_valid
-    , labels = labels_valid_onehot
-    , num_channels = image_depth
-    , batch_size = batch_size
-    , shuffle_and_repeat = False)
-
-    # Get the predicted class probabilities, labels & probabilities of abnormality
-    pred_probs_train, pred_labels_train, pred_probs_abnormal_train = utils.get_predictions(dataset=dataset_train_noshuffle
-    , model=model
-    , steps=num_steps_per_epoch)
-
-    pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset=dataset_valid_noshuffle
-    , model=model
-    , steps=num_steps_per_epoch_valid)
-
-### Tensorflow no longer required, so come out of the session
-
-
-# Calculate (image-wise) accuracy & cross-entropy loss
-accuracy_train = utils.calc_accuracy(labels_train_scalar, pred_labels_train)
-accuracy_valid = utils.calc_accuracy(labels_valid_scalar, pred_labels_valid)
-loss_train = utils.calc_crossentropy_loss(labels_train_onehot, pred_probs_train)
-loss_valid = utils.calc_crossentropy_loss(labels_valid_onehot, pred_probs_valid)
-print("ACCURACY TRAIN:", accuracy_train)
-print("ACCURACY VALID:", accuracy_valid)
-print("LOSS TRAIN:", loss_train)
-print("LOSS VALID:", loss_valid)
-
-
-# Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
-num_studies_published_dict = utils.get_num_studies_published()
-
-studies_summary_train = utils.get_study_predictions(images_summary_train, pred_probs_abnormal_train)
-studies_summary_valid = utils.get_study_predictions(images_summary_valid, pred_probs_abnormal_valid)
-
-# Get the numbers of each study category derived from the data
-num_studies_derived_dict = {"train":
-    {"normal": np.sum(studies_summary_train.StudyOutcome==0)
-    , "abnormal": np.sum(studies_summary_train.StudyOutcome==1)}
-, "valid":
-    {"normal": np.sum(studies_summary_valid.StudyOutcome==0)
-    , "abnormal": np.sum(studies_summary_valid.StudyOutcome==1)}
-}
-
-# Now check these vs the published figures:
-if(num_studies_published_dict != num_studies_derived_dict):
-    print("NUMBER OF STUDIES MISMATCHED:")
-    print("Published:", num_studies_published_dict)
-    print("Derived:", num_studies_derived_dict)
-    exit()
-
-# Calc study-wise accuracy & other metrics
-labels_study_train = studies_summary_train.StudyOutcome.values
-pred_labels_study_train = studies_summary_train.PredLabel.values
-
-labels_study_valid = studies_summary_valid.StudyOutcome.values
-pred_labels_study_valid = studies_summary_valid.PredLabel.values
-
-accuracy_study_train = utils.calc_accuracy(labels_study_train, pred_labels_study_train)
-accuracy_study_valid = utils.calc_accuracy(labels_study_valid, pred_labels_study_valid)
-print("accuracy_study_train:",accuracy_study_train)
-print("accuracy_study_valid:",accuracy_study_valid)
-
-# Confusion Matrices
-confusion_matrix_train = confusion_matrix(labels_study_train, pred_labels_study_train)
-confusion_matrix_valid = confusion_matrix(labels_study_valid, pred_labels_study_valid)
-
-print("Confusion Matrix - Train:")
-print(confusion_matrix_train)
-
-print("Confusion Matrix - Valid:")
-print(confusion_matrix_valid)
-
-# Cohen's Kappa Score
-cohen_kappa_train = cohen_kappa_score(labels_study_train, pred_labels_study_train)
-cohen_kappa_valid = cohen_kappa_score(labels_study_valid, pred_labels_study_valid)
-
-print("Cohen's Kappa Score - Train:")
-print(cohen_kappa_train)
-
-print("Cohen's Kappa Score - Valid:")
-print(cohen_kappa_valid)
-
+#
+#     # Re-create the training & validation datasets without shuffling, so can match predictions with orig labels
+#     dataset_train_noshuffle = utils.create_dataset(filenames = filenames_train
+#     , labels = labels_train_onehot
+#     , num_channels = image_depth
+#     , batch_size = batch_size
+#     , shuffle_and_repeat = False)
+#
+#     dataset_valid_noshuffle = utils.create_dataset(filenames = filenames_valid
+#     , labels = labels_valid_onehot
+#     , num_channels = image_depth
+#     , batch_size = batch_size
+#     , shuffle_and_repeat = False)
+#
+#     # Get the predicted class probabilities, labels & probabilities of abnormality
+#     pred_probs_train, pred_labels_train, pred_probs_abnormal_train = utils.get_predictions(dataset=dataset_train_noshuffle
+#     , model=model
+#     , steps=num_steps_per_epoch)
+#
+#     pred_probs_valid, pred_labels_valid, pred_probs_abnormal_valid = utils.get_predictions(dataset=dataset_valid_noshuffle
+#     , model=model
+#     , steps=num_steps_per_epoch_valid)
+#
+# ### Tensorflow no longer required, so come out of the session
+#
+#
+# # Calculate (image-wise) accuracy & cross-entropy loss
+# accuracy_train = utils.calc_accuracy(labels_train_scalar, pred_labels_train)
+# accuracy_valid = utils.calc_accuracy(labels_valid_scalar, pred_labels_valid)
+# loss_train = utils.calc_crossentropy_loss(labels_train_onehot, pred_probs_train)
+# loss_valid = utils.calc_crossentropy_loss(labels_valid_onehot, pred_probs_valid)
+# print("ACCURACY TRAIN:", accuracy_train)
+# print("ACCURACY VALID:", accuracy_valid)
+# print("LOSS TRAIN:", loss_train)
+# print("LOSS VALID:", loss_valid)
+#
+#
+# # Breakdowns of numbers of studies, from the orig MURA paper (Table 1, p3) - use these as a check on the numbers of studies we derive from our data
+# num_studies_published_dict = utils.get_num_studies_published()
+#
+# studies_summary_train = utils.get_study_predictions(images_summary_train, pred_probs_abnormal_train)
+# studies_summary_valid = utils.get_study_predictions(images_summary_valid, pred_probs_abnormal_valid)
+#
+# # Get the numbers of each study category derived from the data
+# num_studies_derived_dict = {"train":
+#     {"normal": np.sum(studies_summary_train.StudyOutcome==0)
+#     , "abnormal": np.sum(studies_summary_train.StudyOutcome==1)}
+# , "valid":
+#     {"normal": np.sum(studies_summary_valid.StudyOutcome==0)
+#     , "abnormal": np.sum(studies_summary_valid.StudyOutcome==1)}
+# }
+#
+# # Now check these vs the published figures:
+# if(num_studies_published_dict != num_studies_derived_dict):
+#     print("NUMBER OF STUDIES MISMATCHED:")
+#     print("Published:", num_studies_published_dict)
+#     print("Derived:", num_studies_derived_dict)
+#     exit()
+#
+# # Calc study-wise accuracy & other metrics
+# labels_study_train = studies_summary_train.StudyOutcome.values
+# pred_labels_study_train = studies_summary_train.PredLabel.values
+#
+# labels_study_valid = studies_summary_valid.StudyOutcome.values
+# pred_labels_study_valid = studies_summary_valid.PredLabel.values
+#
+# accuracy_study_train = utils.calc_accuracy(labels_study_train, pred_labels_study_train)
+# accuracy_study_valid = utils.calc_accuracy(labels_study_valid, pred_labels_study_valid)
+# print("accuracy_study_train:",accuracy_study_train)
+# print("accuracy_study_valid:",accuracy_study_valid)
+#
+# # Confusion Matrices
+# confusion_matrix_train = confusion_matrix(labels_study_train, pred_labels_study_train)
+# confusion_matrix_valid = confusion_matrix(labels_study_valid, pred_labels_study_valid)
+#
+# print("Confusion Matrix - Train:")
+# print(confusion_matrix_train)
+#
+# print("Confusion Matrix - Valid:")
+# print(confusion_matrix_valid)
+#
+# # Cohen's Kappa Score
+# cohen_kappa_train = cohen_kappa_score(labels_study_train, pred_labels_study_train)
+# cohen_kappa_valid = cohen_kappa_score(labels_study_valid, pred_labels_study_valid)
+#
+# print("Cohen's Kappa Score - Train:")
+# print(cohen_kappa_train)
+#
+# print("Cohen's Kappa Score - Valid:")
+# print(cohen_kappa_valid)
+#
 print("--- %s seconds ---" % (time.time() - start_time))
