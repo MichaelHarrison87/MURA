@@ -24,10 +24,10 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0"
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_Glorot_Normal_e_25_is_48_48" ## ENSURE CORRECT
-
+model_name = "SimpleBaseline_Deeper_Medium_BN_FromScratch_RMSProp_lr_5E-4_Plateau_e_25_is_100_100" ## ENSURE CORRECT
+print(model_name)
 # Images Directory
-dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
+dir_images = "./data/processed/resized-100-100/" ## ENSURE CORRECT
 
 
 ### INFO FOR TENSORBOARD
@@ -37,6 +37,7 @@ dir_tensorboard_logs = "./tensorboard_logs/"
 dir_tensorboard_logs = os.path.abspath(dir_tensorboard_logs)
 num_tensorboard_runs = len(os.listdir(dir_tensorboard_logs))
 dir_tensorboard_logs = dir_tensorboard_logs + "/" + model_name
+print(dir_tensorboard_logs)
 # Note: make the log directory later, in case the code fails before the training step and the new directory is left empty
 
 callback_tensorboard = callbacks.TensorBoard(log_dir=dir_tensorboard_logs, write_grads=True, write_images=True, histogram_freq=1)
@@ -112,13 +113,15 @@ print("Image Dimensions:", image_height, image_width, image_depth)
 # TRAINING PARAMS
 num_images_train = len(filenames_train)
 num_images_valid = len(filenames_valid)
-batch_size = 512
+batch_size = 128
 num_epochs = 25
 num_steps_per_epoch = int(np.floor(num_images_train/batch_size))  # Use entire dataset per epoch; round up to ensure entire dataset is covered if batch_size does not divide into num_images
 num_steps_per_epoch_valid = int(np.floor(num_images_valid/batch_size))   # As above
 
 seed_train = 587
 seed_valid = seed_train+1
+
+print("Batch Size:", batch_size)
 
 # Now create the training & validation datasets
 dataset_train = utils.create_dataset(filenames = filenames_train
@@ -145,7 +148,7 @@ def build_model(initial_filters, size_final_dense):
 
     # Input Layer
     image_input = Input(shape=(image_height, image_width, image_depth)) # Final element is number of channels, set as 1 for greyscale
-    #x = BatchNormalization()(image_input)
+    x = BatchNormalization()(image_input)
 
     ### Block 1
     # Convolutional Layer 1
@@ -153,14 +156,14 @@ def build_model(initial_filters, size_final_dense):
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(image_input)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 2
     x = Conv2D( filters = initial_filters
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 1 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
@@ -172,14 +175,14 @@ def build_model(initial_filters, size_final_dense):
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 4
     x = Conv2D( filters = initial_filters*2
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 2 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
@@ -191,16 +194,35 @@ def build_model(initial_filters, size_final_dense):
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Convolutional Layer 6
     x = Conv2D( filters = initial_filters*2*2
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
-    #x = BatchNormalization()(x)
+    x = BatchNormalization()(x)
 
     # Pooling Layer 3 - halve spatial dimension
+    #x = MaxPooling2D(pool_size = (2,2))(x)
+
+
+    ### Block 4
+    # Convolutional Layer 7 - double number of filters
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    x = BatchNormalization()(x)
+
+    # Convolutional Layer 8
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    x = BatchNormalization()(x)
+
+    # Pooling Layer 4 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
 
     # Dense Layer
@@ -225,12 +247,13 @@ with tf.Session(config=config) as sess:
     print("TF SESSION OPEN")
 
     # Build the model
-    model = build_model(initial_filters=32, size_final_dense=100)
+    model = build_model(initial_filters=128, size_final_dense=200)
+    #model = multi_gpu_model(model, gpus=2)
     print("MODEL BUILT")
 
     # Now train it
-    opt_RMSprop = RMSprop()
-    #callback_lr_plateau = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5)
+    opt_RMSprop = RMSprop(lr=(0.001/2))
+    callback_lr_plateau = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5)
     model.compile(optimizer=opt_RMSprop,loss='categorical_crossentropy', metrics=['accuracy'])
     print("MODEL COMPILED")
 

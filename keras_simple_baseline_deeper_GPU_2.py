@@ -18,13 +18,13 @@ from tensorflow.python.keras import callbacks
 from models import inception_resnet_v2
 from utils import utils
 
-### GPU 1
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+### GPU 2
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_Glorot_Normal_e_25_is_48_48" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Small_Deeper_FromScratch_RMSProp_Default_e_25_is_48_48" ## ENSURE CORRECT
 
 # Images Directory
 dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
@@ -201,6 +201,25 @@ def build_model(initial_filters, size_final_dense):
     #x = BatchNormalization()(x)
 
     # Pooling Layer 3 - halve spatial dimension
+    #x = MaxPooling2D(pool_size = (2,2))(x)
+
+
+    ### Block 4
+    # Convolutional Layer 7 - double number of filters
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    #x = BatchNormalization()(x)
+
+    # Convolutional Layer 8
+    x = Conv2D( filters = initial_filters*2*2
+               , kernel_size = (3,3)
+               , activation='relu'
+               , padding='same' )(x)
+    #x = BatchNormalization()(x)
+
+    # Pooling Layer 4 - halve spatial dimension
     x = MaxPooling2D(pool_size = (2,2))(x)
 
     # Dense Layer

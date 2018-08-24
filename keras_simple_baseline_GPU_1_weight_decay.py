@@ -10,6 +10,7 @@ from sklearn.metrics import confusion_matrix, cohen_kappa_score
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, Dense, Flatten, Conv2D, MaxPooling2D, BatchNormalization
 from tensorflow.python.keras.optimizers import RMSprop, Adam
+from tensorflow.python.keras.regularizers import l1, l2
 
 from tensorflow.python.keras.utils import to_categorical, multi_gpu_model
 from tensorflow.python.keras import callbacks
@@ -24,7 +25,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0"
 start_time = time.time()
 
 ### Model Name
-model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_Glorot_Normal_e_25_is_48_48" ## ENSURE CORRECT
+model_name = "SimpleBaseline_Small_FromScratch_RMSProp_Default_L2_1E-1_e_25_is_48_48" ## ENSURE CORRECT
 
 # Images Directory
 dir_images = "./data/processed/resized-48-48/" ## ENSURE CORRECT
@@ -141,7 +142,7 @@ print("DATASETS CREATED")
 ### BUILD MODEL
 # Big: initial_filters=256, size_final_dense=100
 # Small: initial_filters=32, size_final_dense=100
-def build_model(initial_filters, size_final_dense):
+def build_model(initial_filters, size_final_dense, regularizer):
 
     # Input Layer
     image_input = Input(shape=(image_height, image_width, image_depth)) # Final element is number of channels, set as 1 for greyscale
@@ -150,6 +151,7 @@ def build_model(initial_filters, size_final_dense):
     ### Block 1
     # Convolutional Layer 1
     x = Conv2D( filters = initial_filters
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(image_input)
@@ -157,6 +159,7 @@ def build_model(initial_filters, size_final_dense):
 
     # Convolutional Layer 2
     x = Conv2D( filters = initial_filters
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -169,6 +172,7 @@ def build_model(initial_filters, size_final_dense):
     ### Block 2
     # Convolutional Layer 3 - double number of filters
     x = Conv2D( filters = initial_filters*2
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -176,6 +180,7 @@ def build_model(initial_filters, size_final_dense):
 
     # Convolutional Layer 4
     x = Conv2D( filters = initial_filters*2
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -188,6 +193,7 @@ def build_model(initial_filters, size_final_dense):
     ### Block 3
     # Convolutional Layer 5 - double number of filters
     x = Conv2D( filters = initial_filters*2*2
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -195,6 +201,7 @@ def build_model(initial_filters, size_final_dense):
 
     # Convolutional Layer 6
     x = Conv2D( filters = initial_filters*2*2
+               , kernel_regularizer = regularizer
                , kernel_size = (3,3)
                , activation='relu'
                , padding='same' )(x)
@@ -205,10 +212,14 @@ def build_model(initial_filters, size_final_dense):
 
     # Dense Layer
     x = Flatten()(x)
-    x = Dense(size_final_dense,activation='relu')(x)
+    x = Dense(size_final_dense
+                , activation='relu'
+                , kernel_regularizer = regularizer)(x)
 
     # Output Layer
-    out =  Dense(num_classes,activation='softmax')(x) # Task is binary classification
+    out =  Dense(num_classes
+    , activation='softmax'
+    , kernel_regularizer = regularizer)(x) # Task is binary classification
 
     model = Model(image_input, out)
     return(model)
@@ -225,7 +236,7 @@ with tf.Session(config=config) as sess:
     print("TF SESSION OPEN")
 
     # Build the model
-    model = build_model(initial_filters=32, size_final_dense=100)
+    model = build_model(initial_filters=32, size_final_dense=100, regularizer=l2(0.1))
     print("MODEL BUILT")
 
     # Now train it
