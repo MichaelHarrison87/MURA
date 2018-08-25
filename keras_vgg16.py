@@ -180,7 +180,7 @@ with tf.Session(config=config) as sess:
     #Check that VGG16 Weights are unchanged, warn if not:
     vgg16_weights_sum = VGG16.sum_weights_vgg16_notop()
     vgg16_weights_post_train = utils.sum_model_weights(model)[1]
-    if ((vgg16_weights_post_train/vgg16_weights_sum-1)>1E-6):
+    if (abs(vgg16_weights_post_train/vgg16_weights_sum-1)>1E-6):
         print("WARNING: VGG Weights Updated During Training")
 
     print("TRAINING DONE")

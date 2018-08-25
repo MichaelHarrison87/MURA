@@ -7,19 +7,20 @@ import numpy as np
 
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Input, Dense, Flatten
+from tensorflow.python.keras import regularizers
 
 from tensorflow.python.keras.applications import inception_resnet_v2
 
 from utils import utils
 
-def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_classes, pooling, trainable=False):
+def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_classes, pooling, trainable=False, weights='imagenet', final_regulariser=None):
     """
-    Creates the VGG16 model without the final "top" dense layersself.
-    Removing these top layers allows the VGG16 convolutional base to be used with a different set of image classes than the original VGG16 was trained on
+    Creates the Inception-ResNet-v2 model without the final "top" dense layersself.
+    Removing these top layers allows the convolutional base to be used with a different set of image classes than the original net was trained on
     """
 
-    inception_resnet_v2_base = inception_resnet_v2.InceptionResNetV2(weights='imagenet'
-    , include_top=False # Ignore the final dense layers, we'll train our own
+    inception_resnet_v2_base = inception_resnet_v2.InceptionResNetV2(include_top=False # Ignore the final dense layers, we'll train our own
+    , weights=weights
     , input_shape=image_dimensions
     , pooling=pooling)
     inception_resnet_v2_base.trainable=trainable
@@ -27,9 +28,14 @@ def build_inception_resnet_v2_notop(image_dimensions, size_final_dense, num_clas
     image_input = Input(shape=image_dimensions)
 
     x = inception_resnet_v2_base(image_input)
+    x.kernel_regularizer = final_regulariser
+
     x = Flatten()(x)
     x = Dense(size_final_dense,activation='relu')(x)
+    x.kernel_regularizer = final_regulariser
+
     out = Dense(num_classes,activation='softmax')(x) # Task is classification
+    out.kernel_regularizer = final_regulariser
 
     model = Model(image_input, out)
     return(model)
