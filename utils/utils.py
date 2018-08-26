@@ -113,9 +113,21 @@ def get_study_predictions(images_table, images_abnormal_probs, abnormal_threshol
     Some PatientID's appear in multiple Sites, while StudyNumber only counts studies per-patient - hence all 3 are required to uniquely identify a study
     We'll also include DataRole in the groupby in case we want to append train & validation sets back together
     (the other 3 columns are unqiue across train/valid so inclduing DataRole doesn't change # rows)
+
+    We will also calculate and return the image-wise accuracy here, to validate against other calculations (e.g model.evaluate())
+    Want to ensure that data in images_table and images_abnormal_probs are in the same order, as otherwise will get incorrect study-wise results (but no errors per se)
     """
 
     images_table["PredProbAbnormal"] = images_abnormal_probs
+
+    # Image-Wise Results
+    num_images = len(images_abnormal_probs)
+    images_labels_true = images_table["StudyOutcome"]
+    images_labels_pred = np.zeros(num_images)
+    images_labels_pred[images_abnormal_probs>0.5] = 1
+    images_accuracy = sum(images_labels_true==images_labels_pred)/num_images
+
+    # Study-Wise Results
     studies_table = images_table.groupby(["DataRole", "Site", "PatientID", "StudyNumber", "StudyOutcome"], as_index=False).agg({"PredProbAbnormal":"mean"})
     num_studies = len(studies_table)
 
@@ -124,7 +136,7 @@ def get_study_predictions(images_table, images_abnormal_probs, abnormal_threshol
     PredLabel[studies_table["PredProbAbnormal"]>abnormal_threshold]=1
     studies_table["PredLabel"] = PredLabel
 
-    return studies_table
+    return images_accuracy, studies_table
 
 
 def get_num_studies_published():

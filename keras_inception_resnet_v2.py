@@ -25,10 +25,10 @@ os.environ["CUDA_VISIBLE_DEVICES"]="1"
 start_time = time.time()
 
 ### Model Name
-model_name = "IRNV2_noweights_plateau_L2_139_139_e_25" ## ENSURE CORRECT
+model_name = "IRNV2_noweights_plateau_L1_earlystopping_300_300_e_25" ## ENSURE CORRECT
 
 # Images Directory
-dir_images = "./data/processed/resized-139-139/" ## ENSURE CORRECT. Inception-ResNet-v2 min size is 139x139
+dir_images = "./data/processed/resized-300-300/" ## ENSURE CORRECT. Inception-ResNet-v2 min size is 139x139
 
 
 ### INFO FOR TENSORBOARD
@@ -158,7 +158,7 @@ with tf.Session(config=config) as sess:
     , num_classes = num_classes
     , trainable = True
     , weights = None
-    , final_regulariser = l2(0.01))
+    , final_regulariser = l1(0.01))
     #model = multi_gpu_model(model, gpus=2)
     print("MODEL BUILT")
 
@@ -166,6 +166,7 @@ with tf.Session(config=config) as sess:
     opt_RMSprop = RMSprop(lr=0.0002)
     model.compile(optimizer=opt_RMSprop,loss='categorical_crossentropy', metrics=['accuracy'])
     callback_lr_plateau = callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5)
+    callback_earlystopping = callbacks.EarlyStopping(monitor='val_loss', patience=3)
     print("MODEL COMPILED")
 
     train_start = time.time()
@@ -175,7 +176,7 @@ with tf.Session(config=config) as sess:
     , steps_per_epoch=num_steps_per_epoch
     , validation_data=dataset_valid
     , validation_steps=num_steps_per_epoch_valid
-    , callbacks = [callback_tensorboard, callback_lr_plateau]
+    , callbacks = [callback_tensorboard, callback_lr_plateau, callback_earlystopping]
     )
     print("Training time: %s seconds" % (time.time() - train_start))
     print(model.summary())
