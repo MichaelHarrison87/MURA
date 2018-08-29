@@ -20,7 +20,7 @@ from utils import utils
 
 
 ### GPU 2
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 start_time = time.time()
 
