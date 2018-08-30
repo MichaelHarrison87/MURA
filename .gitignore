@@ -1,6 +1,7 @@
 /data/
 /tensorboard_logs/
 /scratchpad/
+/MURA-Submission/
 *.png
 *.jpg
 *.jpeg
